@@ -136,58 +136,65 @@ def process_qr():
     data = request.json
     qr_string = data.get('qr_string', '').strip()
 
-    # Basic Validation
     if len(qr_string) != 10:
         return jsonify({"status": "error", "message": "String must be 10 characters."}), 400
 
     conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row # Allows us to access columns by name easily
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     try:
-        # 1. Look for the existing string in the original records table
-        cursor.execute("SELECT id, qr_string, scan_date FROM qr_records WHERE qr_string = ?", (qr_string,))
-        original_result = cursor.fetchone()
+        # Fetch all data to build the TRUE logical state (including all mutations)
+        cursor.execute("SELECT * FROM qr_records")
+        original_records = cursor.fetchall()
 
-        if original_result:
-            record_id = original_result['id']
-            first_submitted_time = original_result['scan_date']
+        cursor.execute("SELECT * FROM qr_mutations ORDER BY id ASC")
+        mutations = cursor.fetchall()
 
-            # 2. String exists physically! Let's check its "Ghost" state
-            cursor.execute("SELECT action, new_string FROM qr_mutations WHERE record_id = ? ORDER BY id ASC", (record_id,))
-            mutations = cursor.fetchall()
+        records_state = {}
+        for r in original_records:
+            records_state[r['id']] = {
+                'id': r['id'],
+                'qr_string': r['qr_string'],
+                'original_string': r['qr_string'],
+                'scan_date': r['scan_date'],
+                'status': 'ACTIVE'
+            }
 
-            status = 'ACTIVE'
-            current_string = original_result['qr_string']
-
-            # Fast-forward through this specific record's history
-            for m in mutations:
+        # Fast-forward through the ghost timeline
+        for m in mutations:
+            rec_id = m['record_id']
+            if rec_id in records_state:
                 if m['action'] == 'DELETE':
-                    status = 'DELETED'
+                    records_state[rec_id]['status'] = 'DELETED'
                 elif m['action'] == 'EDIT':
-                    status = 'EDITED'
-                    current_string = m['new_string']
+                    records_state[rec_id]['status'] = 'EDITED'
+                    records_state[rec_id]['qr_string'] = m['new_string']
                 elif m['action'] == 'RESTORE':
-                    status = 'EDITED' if current_string != original_result['qr_string'] else 'ACTIVE'
+                    is_edited = records_state[rec_id]['qr_string'] != records_state[rec_id]['original_string']
+                    records_state[rec_id]['status'] = 'EDITED' if is_edited else 'ACTIVE'
 
-            # 3. Return the smart messages based on the final state
-            if status == 'DELETED':
-                return jsonify({
-                    "status": "duplicate", 
-                    "message": f"This string was previously scanned on {first_submitted_time}, but it has been deleted by an admin!"
-                })
-            elif status == 'EDITED' and current_string != qr_string:
-                return jsonify({
-                    "status": "duplicate", 
-                    "message": f"This string is tied to an older record from {first_submitted_time} that an admin has since altered."
-                })
-            else:
-                return jsonify({
-                    "status": "duplicate", 
-                    "message": f"String '{qr_string}' already exists!\nFirst submitted on: {first_submitted_time}"
-                })
+        # Check if the submitted EXACT string currently exists ANYWHERE in the logical state
+        for rec in records_state.values():
+            # Exact match (case-sensitive)
+            if rec['qr_string'] == qr_string:
+                if rec['status'] == 'DELETED':
+                    return jsonify({
+                        "status": "duplicate", 
+                        "message": f"This exact string was previously scanned on {rec['scan_date']}, but it has been deleted by an admin!"
+                    })
+                elif rec['status'] == 'EDITED' and rec['qr_string'] != rec['original_string']:
+                    return jsonify({
+                        "status": "duplicate", 
+                        "message": f"This exact string is tied to an older record from {rec['scan_date']} that an admin has since altered."
+                    })
+                else:
+                    return jsonify({
+                        "status": "duplicate", 
+                        "message": f"String '{qr_string}' already exists!\nFirst submitted on: {rec['scan_date']}"
+                    })
 
-        # 4. Not found in the database at all! Safe to save.
+        # If we made it here, the string is completely new (or a different case) and safe to save!
         scan_date = datetime.now().strftime("%B %d, %Y at %H:%M:%S")
         cursor.execute(
             "INSERT INTO qr_records (qr_string, scan_date) VALUES (?, ?)", 
@@ -195,13 +202,19 @@ def process_qr():
         )
         conn.commit()
 
-        backup_to_gcs() # Trigger the sync
+        backup_to_gcs() # Trigger cloud backup
 
         return jsonify({
             "status": "success", 
             "message": "Record saved successfully!"
         })
 
+    except sqlite3.IntegrityError:
+        # Catches the rare edge case where a string is physically stuck in the original DB
+        return jsonify({
+            "status": "error",
+            "message": "This exact string is locked in the database history. Please restore it via the Admin panel."
+        }), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
@@ -217,7 +230,7 @@ def admin_page():
 @app.route('/admin/api/records', methods=['GET'])
 def get_admin_records():
     """Fetches records, applies mutations in memory, and handles search."""
-    search_query = request.args.get('search', '').strip().upper()
+    search_query = request.args.get('search', '').strip()
 
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row # Lets us access columns by name
