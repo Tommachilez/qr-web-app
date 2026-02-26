@@ -7,13 +7,12 @@ from google.cloud import storage
 
 # --- GCS CONFIGURATION ---
 BUCKET_NAME = "valid-string-backup-bucket"
-SERVICE_ACCOUNT_FILE = "service-account.json"
 
 def backup_to_gcs():
     """Uploads the local SQLite DB file to Google Cloud Storage."""
     try:
         # Initialize the client using the key file
-        client = storage.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
+        client = storage.Client()
         bucket = client.bucket(BUCKET_NAME)
 
         # Create a 'blob' (file object) in GCS
