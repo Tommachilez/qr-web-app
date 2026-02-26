@@ -2,6 +2,29 @@ from flask import Flask, request, jsonify, render_template
 import sqlite3
 from datetime import datetime
 import os
+from google.cloud import storage
+
+
+# --- GCS CONFIGURATION ---
+# Replace these with your actual details!
+BUCKET_NAME = "valid-string-backup-bucket"
+SERVICE_ACCOUNT_FILE = "service-account.json"
+
+def backup_to_gcs():
+    """Uploads the local SQLite DB file to Google Cloud Storage."""
+    try:
+        # Initialize the client using the key file
+        client = storage.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
+        bucket = client.bucket(BUCKET_NAME)
+        
+        # Create a 'blob' (file object) in GCS
+        blob = bucket.blob("backups/qr_data_backup.db")
+        
+        # Upload the actual file
+        blob.upload_from_filename(DB_FILE)
+        print(f"☁️ Cloud Backup Successful: {datetime.now()}")
+    except Exception as e:
+        print(f"❌ Cloud Backup Failed: {e}")
 
 
 app = Flask(__name__)
@@ -91,8 +114,7 @@ def process_qr():
         )
         conn.commit()
 
-        # NOTE: This is where we will trigger the GCS backup later!
-        print(f"✅ Saved: {qr_string} at {scan_date}")
+        backup_to_gcs() # Trigger the sync
 
         return jsonify({
             "status": "success", 

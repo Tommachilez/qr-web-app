@@ -7,3 +7,6 @@ qr_data.db
 
 # OS files
 .DS_Store
+
+# Services
+service-account.json
