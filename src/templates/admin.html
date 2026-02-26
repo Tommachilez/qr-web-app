@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Registry - Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-4xl">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Admin Dashboard 🛡️</h1>
+                <p class="text-gray-500 text-sm mt-1">Manage records safely (Append-Only Mode)</p>
+            </div>
+            <a href="/"
+                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-semibold">
+                ← Back to Scanner
+            </a>
+        </div>
+
+        <div class="mb-6">
+            <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400 text-xl">🔍</span>
+                <input type="text" id="searchInput" placeholder="Search QR string (type at least 4 characters)..."
+                    class="w-full border-2 border-gray-300 pl-10 p-3 rounded-lg focus:border-blue-500 outline-none text-lg transition">
+            </div>
+            <p class="text-xs text-gray-400 mt-2 ml-1" id="searchStatus">Showing recent records...</p>
+        </div>
+
+        <div class="overflow-x-auto rounded-lg border border-gray-200">
+            <table class="w-full text-left border-collapse bg-white">
+                <thead class="bg-gray-50 text-gray-600 text-sm uppercase">
+                    <tr>
+                        <th class="py-3 px-4 border-b">QR String</th>
+                        <th class="py-3 px-4 border-b">Original Scan Date</th>
+                        <th class="py-3 px-4 border-b">Status</th>
+                        <th class="py-3 px-4 border-b text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="adminTableBody" class="text-gray-700">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white p-6 rounded-xl max-w-sm w-full shadow-2xl">
+            <h2 class="text-xl font-bold mb-4 text-gray-800">✏️ Edit Record</h2>
+            <p class="text-sm text-gray-500 mb-4">Editing creates a new mutation record. The original is never lost!</p>
+
+            <input type="hidden" id="editRecordId">
+            <label class="block text-gray-700 font-semibold mb-2">New QR String (10 Chars)</label>
+            <input type="text" id="editInput" maxlength="10"
+                class="w-full border-2 border-gray-300 p-3 rounded-lg focus:border-blue-500 outline-none text-lg mb-6">
+
+            <div class="flex gap-3">
+                <button onclick="closeEditModal()"
+                    class="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300 transition">Cancel</button>
+                <button onclick="submitEdit()"
+                    class="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition">Save
+                    Edit</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- ADMIN LOGIC ---
+        const searchInput = document.getElementById('searchInput');
+        const searchStatus = document.getElementById('searchStatus');
+
+        // Listen for typing in the search bar
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            if (query.length >= 4) {
+                searchStatus.innerText = `Searching for "${query}"...`;
+                loadAdminData(query);
+            } else if (query.length === 0) {
+                searchStatus.innerText = "Showing recent records...";
+                loadAdminData(); // Load default view if empty
+            } else {
+                searchStatus.innerText = "Type at least 4 characters to search...";
+            }
+        });
+
+        // Fetch data from our (soon to be created) Python backend
+        async function loadAdminData(searchQuery = "") {
+            try {
+                // We'll build this route in app.py next!
+                const url = searchQuery ? `/admin/api/records?search=${searchQuery}` : `/admin/api/records`;
+                const response = await fetch(url);
+                const data = await response.json();
+                renderTable(data);
+            } catch (error) {
+                console.error("Failed to load admin data", error);
+            }
+        }
+
+        // Render the table rows based on the ghost state
+        function renderTable(records) {
+            const tbody = document.getElementById('adminTableBody');
+            tbody.innerHTML = '';
+
+            if (records.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-gray-400">No records found.</td></tr>';
+                return;
+            }
+
+            records.forEach(record => {
+                const isDeleted = record.status === 'DELETED';
+
+                // Tailwind magic for ghosted rows!
+                const textStyle = isDeleted ? 'text-gray-400 line-through opacity-60' : 'font-bold text-blue-700';
+                const statusBadge = isDeleted
+                    ? '<span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full font-bold">Deleted</span>'
+                    : (record.status === 'EDITED'
+                        ? '<span class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full font-bold">Edited</span>'
+                        : '<span class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full font-bold">Active</span>');
+
+                // Toggle between Edit/Delete and Restore buttons
+                const actionButtons = isDeleted
+                    ? `<button onclick="mutateRecord(${record.id}, 'RESTORE')" class="text-blue-600 hover:text-blue-800 hover:underline text-sm font-semibold">⏪ Restore</button>`
+                    : `
+                       <button onclick="openEditModal(${record.id}, '${record.qr_string}')" class="text-gray-600 hover:text-blue-600 mr-3 text-xl" title="Edit">✏️</button>
+                       <button onclick="mutateRecord(${record.id}, 'DELETE')" class="text-gray-600 hover:text-red-600 text-xl" title="Delete">🗑️</button>
+                      `;
+
+                const row = `
+                    <tr class="border-b hover:bg-gray-50 transition">
+                        <td class="py-4 px-4 font-mono ${textStyle}">${record.qr_string}</td>
+                        <td class="py-4 px-4 text-sm text-gray-500">${record.original_date}</td>
+                        <td class="py-4 px-4">${statusBadge}</td>
+                        <td class="py-4 px-4 text-right">${actionButtons}</td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        // Send a ghost mutation to the server (Delete or Restore)
+        async function mutateRecord(recordId, actionType, newString = null) {
+            try {
+                const response = await fetch('/admin/api/mutate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        record_id: recordId,
+                        action: actionType,
+                        new_string: newString
+                    })
+                });
+
+                if (response.ok) {
+                    // Reload the table to show the new state!
+                    loadAdminData(searchInput.value.trim().length >= 4 ? searchInput.value.trim() : "");
+                } else {
+                    alert("Failed to update record.");
+                }
+            } catch (error) {
+                console.error("Mutation error:", error);
+            }
+        }
+
+        // --- MODAL LOGIC ---
+        function openEditModal(id, currentString) {
+            document.getElementById('editRecordId').value = id;
+            document.getElementById('editInput').value = currentString;
+            document.getElementById('editModal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.add('hidden');
+        }
+
+        function submitEdit() {
+            const id = document.getElementById('editRecordId').value;
+            const newString = document.getElementById('editInput').value.trim();
+
+            if (newString.length !== 10) {
+                alert("String must be exactly 10 characters!");
+                return;
+            }
+
+            mutateRecord(id, 'EDIT', newString);
+            closeEditModal();
+        }
+
+        // Load initial data on startup
+        window.onload = () => loadAdminData();
+    </script>
+</body>
+
+</html>
