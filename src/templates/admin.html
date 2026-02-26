@@ -185,14 +185,20 @@
                     })
                 });
 
-                if (response.ok) {
-                    // Reload the table to show the new state!
-                    loadAdminData(searchInput.value.trim().length >= 4 ? searchInput.value.trim() : "");
+                // 1. Crack open the JSON response from Python FIRST!
+                const result = await response.json();
+
+                if (response.ok && result.status === 'success') {
+                    // 2. Success! Reload the table and STAY on the current page
+                    const currentSearch = searchInput.value.trim();
+                    loadAdminData(currentSearch.length >= 4 ? currentSearch : "", currentPage);
                 } else {
-                    alert("Failed to update record.");
+                    // 3. Collision or Error! Display the smart message from Python
+                    alert("❌ Error: " + (result.message || "Failed to update record."));
                 }
             } catch (error) {
                 console.error("Mutation error:", error);
+                alert("❌ An unexpected error occurred while communicating with the server.");
             }
         }
 

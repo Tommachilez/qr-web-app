@@ -299,7 +299,7 @@ def get_admin_records():
 
 @app.route('/admin/api/mutate', methods=['POST'])
 def mutate_record():
-    """Appends a new action to the ghost table (NO UPDATES/DELETES)."""
+    """Appends a new action to the ghost table with Edit Collision prevention."""
     data = request.json
     record_id = data.get('record_id')
     action = data.get('action') # 'EDIT', 'DELETE', or 'RESTORE'
@@ -308,12 +308,44 @@ def mutate_record():
     if not record_id or action not in ['EDIT', 'DELETE', 'RESTORE']:
         return jsonify({"status": "error", "message": "Invalid data."}), 400
 
-    mutation_date = datetime.now().strftime("%B %d, %Y at %H:%M:%S")
-
     conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
-        # We exclusively INSERT. Original data remains pristine!
+        # --- NEW: COLLISION CHECK FOR EDITS ---
+        if action == 'EDIT':
+            if not new_string or len(new_string) != 10:
+                return jsonify({"status": "error", "message": "String must be 10 characters."}), 400
+
+            # 1. Rebuild the logical state to check if the new string already exists
+            cursor.execute("SELECT * FROM qr_records")
+            original_records = cursor.fetchall()
+
+            cursor.execute("SELECT * FROM qr_mutations ORDER BY id ASC")
+            mutations = cursor.fetchall()
+
+            records_state = {}
+            for r in original_records:
+                records_state[r['id']] = {'qr_string': r['qr_string'], 'original_string': r['qr_string']}
+
+            for m in mutations:
+                rec_id = m['record_id']
+                if rec_id in records_state:
+                    if m['action'] == 'EDIT':
+                        records_state[rec_id]['qr_string'] = m['new_string']
+                    elif m['action'] == 'RESTORE':
+                        records_state[rec_id]['qr_string'] = records_state[rec_id]['original_string']
+
+            # 2. Check if the submitted string currently belongs to ANY OTHER record
+            for rec_id, rec_data in records_state.items():
+                if rec_id != record_id and rec_data['qr_string'] == new_string:
+                    return jsonify({
+                        "status": "error", 
+                        "message": f"Cannot edit: The string '{new_string}' is already in use by another record!"
+                    }), 400
+
+        # If it passes the check, log the mutation!
+        mutation_date = datetime.now().strftime("%B %d, %Y at %H:%M:%S")
         cursor.execute(
             "INSERT INTO qr_mutations (record_id, action, new_string, mutation_date) VALUES (?, ?, ?, ?)",
             (record_id, action, new_string, mutation_date)
