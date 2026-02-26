@@ -15,15 +15,34 @@ def backup_to_gcs():
         # Initialize the client using the key file
         client = storage.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
         bucket = client.bucket(BUCKET_NAME)
-        
+
         # Create a 'blob' (file object) in GCS
         blob = bucket.blob("backups/qr_data_backup.db")
-        
+
         # Upload the actual file
         blob.upload_from_filename(DB_FILE)
         print(f"☁️ Cloud Backup Successful: {datetime.now()}")
     except Exception as e:
         print(f"❌ Cloud Backup Failed: {e}")
+
+def download_from_gcs():
+    """Downloads the local SQLite DB file from Google Cloud Storage on startup."""
+    try:
+        # Initialize the client using the key file
+        client = storage.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
+        bucket = client.bucket(BUCKET_NAME)
+
+        # Point to the backup file in GCS
+        blob = bucket.blob("backups/qr_data_backup.db")
+
+        # Only download if it already exists in the bucket
+        if blob.exists():
+            blob.download_to_filename(DB_FILE)
+            print(f"☁️ Cloud Sync Download Successful: {datetime.now()}")
+        else:
+            print("☁️ No existing cloud backup found. Starting with a fresh local DB!")
+    except Exception as e:
+        print(f"❌ Cloud Sync Download Failed: {e}")
 
 
 app = Flask(__name__)
@@ -64,6 +83,7 @@ def init_db():
 
 
 # Initialize the DB on startup
+download_from_gcs()
 init_db()
 
 
