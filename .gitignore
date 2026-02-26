@@ -1,0 +1,9 @@
+# Python virtual environment
+.venv/
+__pycache__/
+
+# Database
+qr_data.db
+
+# OS files
+.DS_Store

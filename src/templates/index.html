@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Registry</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+
+
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl">
+
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold text-gray-800">QR Registry</h1>
+            <span id="status"
+                class="px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700">Online</span>
+        </div>
+
+        <div class="mb-8">
+            <label class="block text-gray-700 font-semibold mb-2">Enter QR String (10 Characters)</label>
+            <div class="flex gap-2">
+                <input type="text" id="qrInput" maxlength="10" placeholder="e.g. ABC1234567"
+                    class="flex-1 border-2 border-gray-300 p-3 rounded-lg focus:border-blue-500 outline-none text-lg">
+                <button onclick="processInput()"
+                    class="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 transition">Submit</button>
+            </div>
+        </div>
+
+        <hr class="mb-8">
+
+        <div class="grid grid-cols-2 gap-4">
+            <button onclick="startCamera()"
+                class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-xl hover:bg-gray-50">
+                <span class="text-3xl mb-2">📷</span>
+                <span class="font-semibold">Use Camera</span>
+            </button>
+
+            <label
+                class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-xl hover:bg-gray-50 cursor-pointer">
+                <span class="text-3xl mb-2">📁</span>
+                <span class="font-semibold">Upload Photo</span>
+                <input type="file" id="qr-input-file" accept="image/*" class="hidden">
+            </label>
+        </div>
+
+        <div id="reader" class="mt-6 w-full hidden overflow-hidden rounded-lg"></div>
+
+        <div class="mt-10">
+            <h2 class="text-xl font-bold text-gray-700 mb-4 flex items-center">
+                <span>🕒 Recent Scans</span>
+                <button onclick="loadHistory()" class="ml-auto text-sm text-blue-600 hover:underline">Refresh</button>
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="text-gray-500 text-sm uppercase border-b">
+                            <th class="py-2">QR String</th>
+                            <th class="py-2">Date/Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody" class="text-gray-700">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="alertModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white p-6 rounded-xl max-w-sm w-full text-center">
+            <div class="text-red-500 text-5xl mb-4">⚠️</div>
+            <h2 class="text-xl font-bold mb-2">Already Exists!</h2>
+            <p class="text-gray-600 mb-6" id="alertMessage">This string is already in the database.</p>
+            <button onclick="closeModal()" class="w-full bg-gray-800 text-white py-3 rounded-lg font-bold">OK, I
+                understand</button>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const API_URL = '/process-qr';
+
+        // --- INTERNET STATUS ---
+        window.addEventListener('online', () => {
+            updateStatus(true);
+            syncOfflineData(); // Try to sync as soon as we're back online!
+        });
+        window.addEventListener('offline', () => updateStatus(false));
+
+        function updateStatus(isOnline) {
+            const el = document.getElementById('status');
+            el.innerText = isOnline ? 'Online' : 'Offline (Saving Locally)';
+            el.className = isOnline ? 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700' : 'px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-700';
+        }
+
+        // --- CORE LOGIC ---
+        async function processInput() {
+            const inputField = document.getElementById('qrInput');
+            const qrString = inputField.value.trim();
+
+            if (qrString.length !== 10) {
+                alert("Please enter exactly 10 characters.");
+                return;
+            }
+
+            // Check if we are online
+            if (navigator.onLine) {
+                sendToServer(qrString);
+            } else {
+                saveLocally(qrString);
+            }
+        }
+
+        // Function to fetch and display history
+        async function loadHistory() {
+            try {
+                const response = await fetch('/history');
+                const data = await response.json();
+
+                const tbody = document.getElementById('historyBody');
+                tbody.innerHTML = ''; // Clear existing rows
+
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="2" class="py-4 text-center text-gray-400">No records found yet.</td></tr>';
+                    return;
+                }
+
+                data.forEach(item => {
+                    const row = `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="py-3 font-mono font-bold text-blue-700">${item.qr_string}</td>
+                            <td class="py-3 text-sm text-gray-500">${item.scan_date}</td>
+                        </tr>
+                    `;
+                    tbody.insertAdjacentHTML('beforeend', row);
+                });
+            } catch (error) {
+                console.error("Could not load history:", error);
+            }
+        }
+
+        async function sendToServer(qrString) {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ qr_string: qrString })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'duplicate') {
+                    showAlert(result.message);
+                } else if (result.status === 'success') {
+                    // alert("✅ Saved to database!"); // Removed alert to make it smoother
+                    document.getElementById('qrInput').value = '';
+                    loadHistory();
+                } else {
+                    alert("❌ Error: " + result.message);
+                }
+            } catch (error) {
+                console.error("Server error, saving locally instead:", error);
+                saveLocally(qrString);
+            }
+        }
+
+        // --- OFFLINE SYNC LOGIC ---
+        function saveLocally(qrString) {
+            let offlineData = JSON.parse(localStorage.getItem('pendingScans') || "[]");
+
+            // Check for duplicates in the local queue first
+            if (offlineData.includes(qrString)) {
+                showAlert(`[Offline Mode] String '${qrString}' is already in your pending list!`);
+                return;
+            }
+
+            offlineData.push(qrString);
+            localStorage.setItem('pendingScans', JSON.stringify(offlineData));
+            alert("📡 Connection lost. Saved locally! Will sync when internet returns.");
+            document.getElementById('qrInput').value = '';
+        }
+
+        async function syncOfflineData() {
+            let offlineData = JSON.parse(localStorage.getItem('pendingScans') || "[]");
+            if (offlineData.length === 0) return;
+
+            console.log("Syncing offline data...");
+
+            for (const item of [...offlineData]) {
+                await sendToServer(item);
+                // Remove item from local storage after successful processing
+                offlineData = offlineData.filter(i => i !== item);
+                localStorage.setItem('pendingScans', JSON.stringify(offlineData));
+            }
+        }
+
+        // Handle the Alert Modal
+        function showAlert(msg) {
+            document.getElementById('alertMessage').innerText = msg;
+            document.getElementById('alertModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('alertModal').classList.add('hidden');
+            document.getElementById('qrInput').value = '';
+        }
+
+        // QR Library Setup
+        const html5QrCode = new Html5Qrcode("reader");
+
+        function startCamera() {
+            const readerDiv = document.getElementById('reader');
+            readerDiv.classList.remove('hidden');
+            html5QrCode.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                (decodedText) => {
+                    document.getElementById('qrInput').value = decodedText.substring(0, 10);
+                    html5QrCode.stop();
+                    readerDiv.classList.add('hidden');
+                }
+            );
+        }
+
+        // Load history when the page loads
+        window.onload = loadHistory;
+
+        // File Upload Processing
+        document.getElementById('qr-input-file').addEventListener('change', e => {
+            if (e.target.files.length == 0) return;
+            const imageFile = e.target.files[0];
+            html5QrCode.scanFile(imageFile, true)
+                .then(decodedText => {
+                    document.getElementById('qrInput').value = decodedText.substring(0, 10);
+                })
+                .catch(err => alert("Could not find a QR code in this image."));
+        });
+    </script>
+</body>
+
+</html>
