@@ -1,6 +1,6 @@
 # QR Registry Web App 🛡️
 
-An energetic, mobile-friendly QR code registration system built with **Flask** and **Tailwind CSS**. Designed for reliability in the field, featuring offline support and a transparent audit trail.
+A QR code registration system built with **Flask** and **Tailwind CSS**. Designed for reliability in the field, featuring offline support and a transparent audit trail.
 
 ## 🚀 Features
 
