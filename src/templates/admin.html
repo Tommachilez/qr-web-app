@@ -44,6 +44,18 @@
                 <tbody id="adminTableBody" class="text-gray-700">
                 </tbody>
             </table>
+            <div class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+                <div class="text-sm text-gray-700">
+                    Showing page <span id="pageInfo" class="font-medium">1 of 1</span>
+                    (<span id="totalRecordsInfo">0</span> total records)
+                </div>
+                <div class="flex gap-2">
+                    <button id="prevBtn" onclick="changePage(-1)"
+                        class="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">Previous</button>
+                    <button id="nextBtn" onclick="changePage(1)"
+                        class="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">Next</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -69,33 +81,53 @@
 
     <script>
         // --- ADMIN LOGIC ---
+        let currentPage = 1;
+        let totalPages = 1;
         const searchInput = document.getElementById('searchInput');
         const searchStatus = document.getElementById('searchStatus');
 
-        // Listen for typing in the search bar
         searchInput.addEventListener('input', (e) => {
             const query = e.target.value.trim();
+            currentPage = 1; // Reset to page 1 on new search
             if (query.length >= 4) {
                 searchStatus.innerText = `Searching for "${query}"...`;
-                loadAdminData(query);
+                loadAdminData(query, currentPage);
             } else if (query.length === 0) {
                 searchStatus.innerText = "Showing recent records...";
-                loadAdminData(); // Load default view if empty
+                loadAdminData("", currentPage);
             } else {
                 searchStatus.innerText = "Type at least 4 characters to search...";
             }
         });
 
-        // Fetch data from our (soon to be created) Python backend
-        async function loadAdminData(searchQuery = "") {
+        // Add page parameter
+        async function loadAdminData(searchQuery = "", page = 1) {
             try {
-                // We'll build this route in app.py next!
-                const url = searchQuery ? `/admin/api/records?search=${searchQuery}` : `/admin/api/records`;
+                const url = `/admin/api/records?page=${page}${searchQuery ? '&search=' + searchQuery : ''}`;
                 const response = await fetch(url);
                 const data = await response.json();
-                renderTable(data);
+
+                // Update pagination state
+                currentPage = data.current_page;
+                totalPages = data.total_pages;
+
+                document.getElementById('pageInfo').innerText = `${currentPage} of ${totalPages}`;
+                document.getElementById('totalRecordsInfo').innerText = data.total_records;
+
+                document.getElementById('prevBtn').disabled = currentPage <= 1;
+                document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+
+                renderTable(data.records); // Note: data.records instead of just data
             } catch (error) {
                 console.error("Failed to load admin data", error);
+            }
+        }
+
+        function changePage(direction) {
+            const newPage = currentPage + direction;
+            if (newPage >= 1 && newPage <= totalPages) {
+                const query = searchInput.value.trim();
+                loadAdminData(query.length >= 4 ? query : "", newPage);
             }
         }
 

@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, render_template
 import sqlite3
 from datetime import datetime
-import os
+import math
 from google.cloud import storage
 
 
@@ -229,34 +229,32 @@ def admin_page():
 
 @app.route('/admin/api/records', methods=['GET'])
 def get_admin_records():
-    """Fetches records, applies mutations in memory, and handles search."""
     search_query = request.args.get('search', '').strip()
+    # NEW: Grab the requested page number, default to 1
+    page = int(request.args.get('page', 1))
+    per_page = 20 
 
     conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row # Lets us access columns by name
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     try:
-        # 1. Fetch all original records
         cursor.execute("SELECT * FROM qr_records ORDER BY id DESC")
         original_records = cursor.fetchall()
 
-        # 2. Fetch all mutations in chronological order
         cursor.execute("SELECT * FROM qr_mutations ORDER BY id ASC")
         mutations = cursor.fetchall()
 
-        # 3. Apply the 'ghost' state in Python memory!
         records_state = {}
         for r in original_records:
             records_state[r['id']] = {
                 'id': r['id'],
                 'qr_string': r['qr_string'],
-                'original_string': r['qr_string'], # Keep track of the original
+                'original_string': r['qr_string'],
                 'original_date': r['scan_date'],
                 'status': 'ACTIVE'
             }
 
-        # Fast-forward through history
         for m in mutations:
             rec_id = m['record_id']
             if rec_id in records_state:
@@ -266,21 +264,32 @@ def get_admin_records():
                     records_state[rec_id]['status'] = 'EDITED'
                     records_state[rec_id]['qr_string'] = m['new_string']
                 elif m['action'] == 'RESTORE':
-                    # If restored, check if the string matches the original
                     is_edited = records_state[rec_id]['qr_string'] != records_state[rec_id]['original_string']
                     records_state[rec_id]['status'] = 'EDITED' if is_edited else 'ACTIVE'
-        
-        # 4. Filter by the Search Query
         final_results = []
         for rec in records_state.values():
             if search_query and search_query not in rec['qr_string']:
                 continue
             final_results.append(rec)
 
-        # Re-sort descending by ID so newest is top
         final_results.sort(key=lambda x: x['id'], reverse=True)
 
-        return jsonify(final_results)
+        # --- NEW: PAGINATION MATH ---
+        total_records = len(final_results)
+        total_pages = math.ceil(total_records / per_page)
+        if total_pages == 0: total_pages = 1 # Always show at least 1 page
+
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_results = final_results[start_idx:end_idx]
+
+        # Send back a rich package containing the records AND the page info!
+        return jsonify({
+            "records": paginated_results,
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_records": total_records
+        })
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
