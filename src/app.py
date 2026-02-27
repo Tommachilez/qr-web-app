@@ -28,8 +28,8 @@ def backup_to_gcs():
 def download_from_gcs():
     """Downloads the local SQLite DB file from Google Cloud Storage on startup."""
     try:
-        # Initialize the client using the key file
-        client = storage.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
+        # Initialize the client exactly like the backup function!
+        client = storage.Client()
         bucket = client.bucket(BUCKET_NAME)
 
         # Point to the backup file in GCS
