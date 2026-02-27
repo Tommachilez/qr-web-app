@@ -155,8 +155,8 @@ def process_qr():
     data = request.json
     qr_string = data.get('qr_string', '').strip()
 
-    if len(qr_string) != 10:
-        return jsonify({"status": "error", "message": "String must be 10 characters."}), 400
+    if len(qr_string) != 9:
+        return jsonify({"status": "error", "message": "String must be 9 characters."}), 400
 
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
@@ -333,8 +333,8 @@ def mutate_record():
     try:
         # --- NEW: COLLISION CHECK FOR EDITS ---
         if action == 'EDIT':
-            if not new_string or len(new_string) != 10:
-                return jsonify({"status": "error", "message": "String must be 10 characters."}), 400
+            if not new_string or len(new_string) != 9:
+                return jsonify({"status": "error", "message": "String must be 9 characters."}), 400
 
             # 1. Rebuild the logical state to check if the new string already exists
             cursor.execute("SELECT * FROM qr_records")

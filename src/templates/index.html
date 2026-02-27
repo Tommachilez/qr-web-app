@@ -28,9 +28,9 @@
         </div>
 
         <div class="mb-8">
-            <label class="block text-gray-700 font-semibold mb-2">Enter QR String (10 Characters)</label>
+            <label class="block text-gray-700 font-semibold mb-2">Enter QR String (9 Characters)</label>
             <div class="flex gap-2">
-                <input type="text" id="qrInput" maxlength="10" placeholder="e.g. ABC1234567"
+                <input type="text" id="qrInput" maxlength="9" placeholder="e.g. ABC1234567"
                     class="flex-1 border-2 border-gray-300 p-3 rounded-lg focus:border-blue-500 outline-none text-lg">
                 <button onclick="processInput()"
                     class="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 transition">Submit</button>
@@ -109,8 +109,8 @@
             const inputField = document.getElementById('qrInput');
             const qrString = inputField.value.trim();
 
-            if (qrString.length !== 10) {
-                alert("Please enter exactly 10 characters.");
+            if (qrString.length !== 9) {
+                alert("Please enter exactly 9 characters.");
                 return;
             }
 
@@ -242,7 +242,7 @@
             const imageFile = e.target.files[0];
             html5QrCode.scanFile(imageFile, true)
                 .then(decodedText => {
-                    document.getElementById('qrInput').value = decodedText.substring(0, 10);
+                    document.getElementById('qrInput').value = decodedText.substring(0, 9);
                 })
                 .catch(err => alert("Could not find a QR code in this image."));
         });

@@ -65,8 +65,8 @@
             <p class="text-sm text-gray-500 mb-4">Editing creates a new mutation record. The original is never lost!</p>
 
             <input type="hidden" id="editRecordId">
-            <label class="block text-gray-700 font-semibold mb-2">New QR String (10 Chars)</label>
-            <input type="text" id="editInput" maxlength="10"
+            <label class="block text-gray-700 font-semibold mb-2">New QR String (9 Chars)</label>
+            <input type="text" id="editInput" maxlength="9"
                 class="w-full border-2 border-gray-300 p-3 rounded-lg focus:border-blue-500 outline-none text-lg mb-6">
 
             <div class="flex gap-3">
@@ -217,8 +217,8 @@
             const id = document.getElementById('editRecordId').value;
             const newString = document.getElementById('editInput').value.trim();
 
-            if (newString.length !== 10) {
-                alert("String must be exactly 10 characters!");
+            if (newString.length !== 9) {
+                alert("String must be exactly 9 characters!");
                 return;
             }
 
