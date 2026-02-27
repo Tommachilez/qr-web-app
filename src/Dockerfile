@@ -10,5 +10,5 @@ COPY . /app
 # Install the required packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Run the app using Gunicorn (the standard for Flask apps in production)
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "app:app"]
+# Run the app using Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "120", "app:app"]
