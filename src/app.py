@@ -1,9 +1,10 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_file
 import sqlite3
 from datetime import datetime
 import math
 from google.cloud import storage
-
+import io
+from openpyxl import Workbook
 
 # --- GCS CONFIGURATION ---
 BUCKET_NAME = "valid-string-backup-bucket"
@@ -375,6 +376,76 @@ def mutate_record():
         backup_to_gcs()
 
         return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/export-excel', methods=['GET'])
+def export_excel():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    try:
+        # 1. Fetch data and rebuild logical state (just like your other routes!)
+        cursor.execute("SELECT * FROM qr_records")
+        original_records = cursor.fetchall()
+        cursor.execute("SELECT * FROM qr_mutations ORDER BY id ASC")
+        mutations = cursor.fetchall()
+
+        records_state = {}
+        for r in original_records:
+            records_state[r['id']] = {
+                'id': r['id'],
+                'qr_string': r['qr_string'],
+                'original_string': r['qr_string'],
+                'scan_date': r['scan_date'],
+                'status': 'ACTIVE'
+            }
+
+        # Fast-forward history
+        for m in mutations:
+            rec_id = m['record_id']
+            if rec_id in records_state:
+                if m['action'] == 'DELETE':
+                    records_state[rec_id]['status'] = 'DELETED'
+                elif m['action'] == 'EDIT':
+                    records_state[rec_id]['status'] = 'EDITED'
+                    records_state[rec_id]['qr_string'] = m['new_string']
+                elif m['action'] == 'RESTORE':
+                    is_edited = records_state[rec_id]['qr_string'] != records_state[rec_id]['original_string']
+                    records_state[rec_id]['status'] = 'EDITED' if is_edited else 'ACTIVE'
+
+        # 2. Filter out deleted items and sort them
+        active_records = [rec for rec in records_state.values() if rec['status'] != 'DELETED']
+        active_records.sort(key=lambda x: x['id'], reverse=True) # Newest first
+
+        # 3. Create the simple Excel Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "QR Scans"
+
+        # Add header row
+        ws.append(["QR String", "Scan Date", "Status"])
+
+        # Add the data rows
+        for rec in active_records:
+            ws.append([rec['qr_string'], rec['scan_date'], rec['status']])
+
+        # 4. Save to memory and send it to the user!
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name="QR_Registry_Export.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
