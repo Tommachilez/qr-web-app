@@ -1,6 +1,9 @@
 # Use a lightweight Python image
 FROM python:3.10-slim
 
+# Force Python to print logs immediately (No buffering!)
+ENV PYTHONUNBUFFERED=1
+
 # Set the working directory
 WORKDIR /app
 
